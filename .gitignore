@@ -1,2 +1,4 @@
 *.csv
 *.dat
+*.train
+*.test
