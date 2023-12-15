@@ -1,4 +1,4 @@
-*.csv
-*.dat
-*.train
-*.test
+data/
+flagged/
+gpt_store/
+pdfs/
