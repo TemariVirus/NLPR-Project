@@ -1,6 +1,7 @@
 <script lang="ts">
     import { PUBLIC_LEX_API } from "$env/static/public";
     import { v4 as uuidv4 } from "uuid";
+    import reload_icon from "$lib/images/reload-icon.webp";
 
     interface ChatMessage {
         message: string;
@@ -67,6 +68,16 @@
 <div class="bg-image" />
 <div class="main-container">
     <h1>Health Buddy</h1>
+    <button class="reload-btn" aria-label="reload" on:click={invalidateSession}>
+        <img
+            src={reload_icon}
+            alt="Reload"
+            width="48px"
+            height="48px"
+            draggable="false"
+        />
+    </button>
+
     <div class="message-container multiline" id="message-container">
         {#each chat_history as message}
             {#if message.from_user}
@@ -96,7 +107,7 @@
 
 <style>
     h1 {
-        margin: 16px 0;
+        margin: 12px 0;
         font-size: 48px;
     }
 
@@ -116,9 +127,10 @@
     }
 
     .main-container {
+        position: relative;
         display: flex;
         max-width: 600px;
-        margin: 20px auto;
+        margin: 24px auto;
         padding: 24px;
         background-color: #f0f0f0;
         background-color: #f0f0f0dd;
@@ -128,6 +140,15 @@
         overflow: hidden;
         flex-direction: column;
         align-items: center;
+    }
+
+    .reload-btn {
+        position: absolute;
+        top: 42px;
+        right: 36px;
+        background: none;
+        border: 0;
+        cursor: pointer;
     }
 
     .message-container {
