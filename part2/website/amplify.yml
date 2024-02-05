@@ -1,0 +1,18 @@
+applications:
+  - frontend:
+      phases:
+        preBuild:
+          commands:
+            - echo "PUBLIC_LEX_API=$LEX_API" >> .env
+            - npm ci
+        build:
+          commands:
+            - npm run build
+      artifacts:
+        baseDirectory: /build
+        files:
+          - '**/*'
+      cache:
+        paths:
+          - node_modules/**/*
+    appRoot: part2/website

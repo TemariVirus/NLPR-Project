@@ -1,4 +1,9 @@
-:root {
-    background-color: #333;
-    color: #fff;
+body {
+    font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
+    margin: 0;
+    padding: 0;
+}
+
+.multiline {
+    white-space: pre-wrap;
 }
