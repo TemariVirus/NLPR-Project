@@ -3,8 +3,8 @@ import os
 
 import boto3
 
-BOT_ID = os.environ["BOT_ID"]
-BOT_ALIAS_ID = os.environ["BOT_ALIAS_ID"]
+BOT_ID = os.getenv["BOT_ID"]
+BOT_ALIAS_ID = os.getenv["BOT_ALIAS_ID"]
 
 lex = boto3.client("lexv2-runtime")
 

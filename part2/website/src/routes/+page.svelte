@@ -27,6 +27,7 @@
 
     async function sendLex() {
         if (sending) return;
+        sending = true;
 
         chat_history = [
             ...chat_history,
@@ -55,7 +56,15 @@
                     })),
                 ];
             })
-            .catch((error) => console.error(error));
+            .catch((error) => {
+                console.error(error);
+                alert(
+                    "An error occurred while sending the message. Please try again."
+                );
+            })
+            .finally(() => {
+                sending = false;
+            });
 
         scrollToCurrent();
     }
