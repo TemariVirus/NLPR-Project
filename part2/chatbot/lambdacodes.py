@@ -61,6 +61,16 @@ def elicit_slot(
     return format_response(event, session_state, messages)
 
 
+def set_slot_value(slots, slot_name, value):
+    slots[slot_name] = {
+        "value": {
+            "originalValue": value,
+            "interpretedValue": value,
+            "resolvedValues": [value],
+        }
+    }
+
+
 def is_valid_username(username: str) -> bool:
     return re.match(r"^[a-zA-Z ]+$", username)
 
@@ -71,7 +81,7 @@ def is_valid_password(password: str) -> bool:
 
 def get_user(username: str) -> bool:
     response = user_table.get_item(Key={"username": username})
-    return response.get("Item", None)
+    return response.get("Item", {})
 
 
 def hash_password(password: str) -> str:
@@ -133,8 +143,9 @@ def get_symptoms(event: dict[str, any]) -> dict[str, any]:
     if should_fulfill(event):
         return fulfill_get_symptoms(event)
 
-    user = None
     slots = event["sessionState"]["intent"]["slots"]
+    attributes = event["sessionState"]["sessionAttributes"]
+    user = None
 
     # Validate name
     if slots.get("name", ""):
@@ -144,16 +155,21 @@ def get_symptoms(event: dict[str, any]) -> dict[str, any]:
         user = get_user(username)
         if not user:
             return fulfill(event, ["You have not recorded any symptoms yet."])
-        elif not slots.get("password", ""):
-            # Delegate does not display messages, thus elict_slot is used here
-            return elicit_slot(
-                event,
-                "password",
-                [
-                    f"Welcome back, {username}!",
-                    "Please enter your password.",
-                ],
-            )
+        else:
+            attributes["name"] = username
+            if not slots.get("password", ""):
+                # Delegate does not display messages, thus elict_slot is used here
+                return elicit_slot(
+                    event,
+                    "password",
+                    [
+                        f"Welcome back, {username}!",
+                        "Please enter your password.",
+                    ],
+                )
+    elif attributes.get("name", ""):
+        # Fill in name if possible
+        set_slot_value(slots, "name", attributes["name"])
 
     # Validate password
     if slots.get("password", ""):
@@ -172,6 +188,11 @@ def get_symptoms(event: dict[str, any]) -> dict[str, any]:
                 "password",
                 ["The password you entered is incorrect. Please try again."],
             )
+
+        attributes["password"] = password
+    elif attributes.get("password", ""):
+        # Fill in password if possible
+        set_slot_value(slots, "password", attributes["password"])
 
     return delegate(event)
 
@@ -211,6 +232,7 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
         return fulfill_post_symptoms(event)
 
     slots = event["sessionState"]["intent"]["slots"]
+    attributes = event["sessionState"]["sessionAttributes"]
     user = None
 
     # Validate name
@@ -219,6 +241,7 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
         if not is_valid_username(username):
             return elicit_slot(event, "name", ["Please enter a valid name."])
         user = get_user(username)
+        attributes["name"] = username
 
         if not slots.get("password", ""):
             # Delegate does not display messages, thus elict_slot is used here
@@ -237,6 +260,9 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
                     ]
                 ),
             )
+    elif attributes.get("name", ""):
+        # Fill in name if possible
+        set_slot_value(slots, "name", attributes["name"])
 
     # Validate password
     if slots.get("password", ""):
@@ -256,14 +282,14 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
                 ["The password you entered is incorrect. Please try again."],
             )
 
+        attributes["password"] = password
+    elif attributes.get("password", ""):
+        # Fill in password if possible
+        set_slot_value(slots, "password", attributes["password"])
+
     # Fill in gender if possible
     if not slots.get("gender", "") and user:
-        slots["gender"] = {
-            "value": {
-                "originalValue": user["gender"],
-                "interpretedValue": user["gender"],
-            }
-        }
+        set_slot_value(slots, "gender", user["gender"])
 
     # Validate age
     if slots.get("age", ""):
@@ -278,51 +304,65 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
             return elicit_slot(event, "age", ["Please enter a positive age."])
         if age > 200:
             return elicit_slot(event, "age", ["Please enter a realistic age."])
-    # Fill in age if possible
-    if not slots.get("age", "") and user:
-        slots["age"] = {
-            "value": {
-                "originalValue": user["age"],
-                "interpretedValue": user["age"],
-            }
-        }
-
-    history_exists = None
-    if slots.get("history_exists", ""):
-        history_exists = slots["history_exists"]["value"]["interpretedValue"]
     elif user:
-        history_exists = "yes"
-        slots["history_exists"] = {
-            "value": {
-                "originalValue": history_exists,
-                "interpretedValue": history_exists,
-            }
-        }
+        # Fill in age if possible
+        set_slot_value(slots, "age", user["age"])
+
+    # Fill in history_exists if possible
+    if not slots.get("history_exists", "") and user:
+        set_slot_value(slots, "history_exists", "yes")
 
     # Fill in history if possible
     if not slots.get("history", ""):
         if user:
-            slots["history"] = {
-                "value": {
-                    "originalValue": ",".join(user["history"]),
-                    "interpretedValue": ",".join(user["history"]),
-                }
-            }
-        elif history_exists == "no":
+            set_slot_value(slots, "history", ",".join(user["history"]))
+        else:
             # Fill with empty array if no history exists
-            slots["history"] = {
-                "value": {
-                    "originalValue": "",
-                    "interpretedValue": "",
-                }
-            }
+            set_slot_value(slots, "history", "")
 
     return delegate(event)
 
 
+def prepare_prompt(name: str, password: str, prompt: str) -> str:
+    prompt = (
+        'You are a healthcare expert system called "Health Buddy", created to answer my questions about the new context or about myself. Here is my question: '
+        + prompt.strip()
+    )
+    unauthorized_prompt = (
+        "If you require my personal information, you should request that I log in. "
+        + prompt
+    )
+
+    if not name or not password:
+        return unauthorized_prompt
+
+    user = get_user(name)
+    if not user:
+        return unauthorized_prompt
+
+    hashed = hash_password(password)
+    if user.get("password", "") != hashed:
+        return unauthorized_prompt
+
+    # Inject user info into prompt if they are authenticated
+    gender = user["gender"]
+    age = user["age"]
+    history = ",".join([s for s in user["history"]]) if user["history"] else "none"
+    symptoms = (
+        ",".join([s["symptom"] for s in user["symptoms"]])
+        if user["symptoms"]
+        else "none"
+    )
+    return f"Hello, I am {name}. My gender is {gender} and I am {age} years old. This is my medical history: ({history}). These are the symptoms I am experiencing: ({symptoms}). {prompt}"
+
+
 def fallback(event: dict[str, any]) -> dict[str, any]:
+    attributes = event["sessionState"]["sessionAttributes"]
+    name = attributes.get("name", None)
+    password = attributes.get("password", None)
+    prompt = prepare_prompt(name, password, event["inputTranscript"])
+
     # Fallback to GPT-3.5 to answer queries
-    prompt = event["inputTranscript"]
     response = query_engine.query(prompt).response
     return fulfill(event, [response])
 
@@ -336,7 +376,7 @@ def init_llm():
     # Hyperparameters
     TEMPERATURE = 0.9
     MAX_OUTPUT_LEN = 1024
-    CONTEXT_WINDOW = 2048
+    CONTEXT_WINDOW = 4096
     CHUNK_OVERLAP_RATIO = 0.1
     LLM_NAME = "gpt-35-turbo"  # Fixed to deployed model
     EMBEDDING_MODEL = "text-embedding-ada-002"  # Fixed to deployed model
