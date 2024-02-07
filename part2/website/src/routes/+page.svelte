@@ -170,6 +170,22 @@
         overflow-y: auto;
     }
 
+    .message-container::-webkit-scrollbar {
+        width: 10px;
+    }
+
+    .message-container::-webkit-scrollbar-track {
+        border-radius: 10px;
+        background-color: #e7e7e7;
+        border: 1px solid #cacaca;
+        box-shadow: inset 0 0 6px rgba(0, 0, 0, 0.3);
+    }
+
+    .message-container::-webkit-scrollbar-thumb {
+        border-radius: 10px;
+        background-color: #a7a7a7;
+    }
+
     .user {
         text-align: right;
         align-self: flex-end;
