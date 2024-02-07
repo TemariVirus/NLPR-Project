@@ -309,14 +309,18 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
         set_slot_value(slots, "age", user["age"])
 
     # Fill in history_exists if possible
-    if not slots.get("history_exists", "") and user:
-        set_slot_value(slots, "history_exists", "yes")
+    history_exists = None
+    if slots.get("history_exists", ""):
+        history_exists = slots["history_exists"]["value"]["interpretedValue"]
+    elif user:
+        history_exists = "yes"
+        set_slot_value(slots, "history_exists", history_exists)
 
     # Fill in history if possible
     if not slots.get("history", ""):
         if user:
             set_slot_value(slots, "history", ",".join(user["history"]))
-        else:
+        elif history_exists == "no":
             # Fill with empty array if no history exists
             set_slot_value(slots, "history", "")
 
