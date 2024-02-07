@@ -117,6 +117,7 @@ def unpack_symptoms(symptoms: [dict[str, any]]) -> [str]:
 
 def fulfill_get_symptoms(event: dict[str, any]) -> dict[str, any]:
     slots = event["sessionState"]["intent"]["slots"]
+    attributes = event["sessionState"]["sessionAttributes"]
 
     username = slots["name"]["value"]["originalValue"]
     user = get_user(username)
@@ -126,6 +127,8 @@ def fulfill_get_symptoms(event: dict[str, any]) -> dict[str, any]:
     history = "\n".join(["    " + s for s in user["history"]])
     symptoms = unpack_symptoms(user["symptoms"])
 
+    attributes["name"] = username
+    attributes["password"] = slots["password"]["value"]["originalValue"]
     return fulfill(
         event,
         [
@@ -156,7 +159,6 @@ def get_symptoms(event: dict[str, any]) -> dict[str, any]:
         if not user:
             return fulfill(event, ["You have not recorded any symptoms yet."])
         else:
-            attributes["name"] = username
             if not slots.get("password", ""):
                 # Delegate does not display messages, thus elict_slot is used here
                 return elicit_slot(
@@ -188,8 +190,64 @@ def get_symptoms(event: dict[str, any]) -> dict[str, any]:
                 "password",
                 ["The password you entered is incorrect. Please try again."],
             )
+    elif attributes.get("password", ""):
+        # Fill in password if possible
+        set_slot_value(slots, "password", attributes["password"])
 
-        attributes["password"] = password
+    return delegate(event)
+
+
+def login(event: dict[str, any]) -> dict[str, any]:
+    attributes = event["sessionState"]["sessionAttributes"]
+    slots = event["sessionState"]["intent"]["slots"]
+
+    if should_fulfill(event):
+        attributes["name"] = slots["name"]["value"]["originalValue"]
+        attributes["password"] = slots["password"]["value"]["originalValue"]
+        return delegate(event)
+
+    # Chec kfi user is already logged in
+    if attributes.get("name", "") and attributes.get("password", ""):
+        user = get_user(username)
+        if not user:
+            del attributes["name"]
+
+        hashed = hash_password(password)
+        if user and user.get("password", "") == hashed:
+            return fulfill(event, ["You have already logged in."])
+        else:
+            del attributes["password"]
+
+    # Validate name
+    if slots.get("name", ""):
+        username = slots["name"]["value"]["originalValue"]
+        if not is_valid_username(username):
+            return elicit_slot(event, "name", ["Please enter a valid name."])
+        user = get_user(username)
+
+        if not user:
+            return fulfill(event, ["You have not signed up yet."])
+    elif attributes.get("name", ""):
+        # Fill in name if possible
+        set_slot_value(slots, "name", attributes["name"])
+
+    # Validate password
+    if slots.get("password", ""):
+        password = slots["password"]["value"]["originalValue"]
+        if not is_valid_password(password):
+            return elicit_slot(
+                event,
+                "password",
+                ["A password must be at least 8 characters long. Please try again."],
+            )
+
+        hashed = hash_password(password)
+        if user and not check_password(username, hashed):
+            return elicit_slot(
+                event,
+                "password",
+                ["The password you entered is incorrect. Please try again."],
+            )
     elif attributes.get("password", ""):
         # Fill in password if possible
         set_slot_value(slots, "password", attributes["password"])
@@ -199,6 +257,7 @@ def get_symptoms(event: dict[str, any]) -> dict[str, any]:
 
 def fulfill_post_symptoms(event: dict[str, any]) -> dict[str, any]:
     slots = event["sessionState"]["intent"]["slots"]
+    attributes = event["sessionState"]["sessionAttributes"]
 
     username = slots["name"]["value"]["originalValue"]
     password = slots["password"]["value"]["originalValue"]
@@ -224,6 +283,9 @@ def fulfill_post_symptoms(event: dict[str, any]) -> dict[str, any]:
                 "symptoms": [symptom],
             }
         )
+
+    attributes["name"] = username
+    attributes["password"] = password
     return fulfill(event)
 
 
@@ -241,7 +303,6 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
         if not is_valid_username(username):
             return elicit_slot(event, "name", ["Please enter a valid name."])
         user = get_user(username)
-        attributes["name"] = username
 
         if not slots.get("password", ""):
             # Delegate does not display messages, thus elict_slot is used here
@@ -281,8 +342,6 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
                 "password",
                 ["The password you entered is incorrect. Please try again."],
             )
-
-        attributes["password"] = password
     elif attributes.get("password", ""):
         # Fill in password if possible
         set_slot_value(slots, "password", attributes["password"])
@@ -421,6 +480,8 @@ def main(event: dict[str, any], _) -> dict[str, any]:
     match intent:
         case "getSymptoms":
             response = get_symptoms(event)
+        case "login":
+            response = login(event)
         case "postSymptoms":
             response = post_symptoms(event)
         case "FallbackIntent":
