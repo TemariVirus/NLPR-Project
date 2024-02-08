@@ -213,7 +213,7 @@ def login(event: dict[str, any]) -> dict[str, any]:
             del attributes["name"]
             del attributes["password"]
 
-        hashed = hash_password(password)
+        hashed = hash_password(attributes.get("password", ""))
         if user and user.get("password", "") == hashed:
             return fulfill(event, ["You have already logged in."])
         else:
