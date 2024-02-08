@@ -79,9 +79,12 @@ def is_valid_password(password: str) -> bool:
     return re.match(r"^[a-zA-Z0-9!@#$%^&*()_+]{8,}$", password)
 
 
-def get_user(username: str) -> bool:
+def get_user(username: str | None) -> dict[str, any] | None:
+    if username == None:
+        return None
+
     response = user_table.get_item(Key={"username": username})
-    return response.get("Item", {})
+    return response.get("Item", None)
 
 
 def hash_password(password: str) -> str:
@@ -92,7 +95,7 @@ def hash_password(password: str) -> str:
 
 def check_password(username: str, hashed_password: str) -> bool:
     response = user_table.get_item(Key={"username": username})
-    return response.get("Item", {}).get("password", "") == hashed_password
+    return response.get("Item", {}).get("password", None) == hashed_password
 
 
 def parse_history(history: str) -> list[str]:
@@ -116,8 +119,8 @@ def unpack_symptoms(symptoms: [dict[str, any]]) -> list[str]:
 
 
 def fulfill_get_symptoms(event: dict[str, any]) -> dict[str, any]:
-    slots = event["sessionState"]["intent"]["slots"]
-    attributes = event["sessionState"]["sessionAttributes"]
+    slots: dict[str, any] = event["sessionState"]["intent"]["slots"]
+    attributes: dict[str, any] = event["sessionState"]["sessionAttributes"]
 
     username = slots["name"]["value"]["originalValue"]
     user = get_user(username)
@@ -146,35 +149,27 @@ def get_symptoms(event: dict[str, any]) -> dict[str, any]:
     if should_fulfill(event):
         return fulfill_get_symptoms(event)
 
-    slots = event["sessionState"]["intent"]["slots"]
-    attributes = event["sessionState"]["sessionAttributes"]
+    slots: dict[str, any] = event["sessionState"]["intent"]["slots"]
+    attributes: dict[str, any] = event["sessionState"]["sessionAttributes"]
     user = None
 
+    # Fill in name if possible
+    if not slots.get("name", None) and attributes.get("name", None):
+        set_slot_value(slots, "name", attributes["name"])
     # Validate name
-    if slots.get("name", ""):
+    if slots.get("name", None):
         username = slots["name"]["value"]["originalValue"]
         if not is_valid_username(username):
             return elicit_slot(event, "name", ["Please enter a valid name."])
         user = get_user(username)
         if not user:
             return fulfill(event, ["You have not recorded any symptoms yet."])
-        else:
-            if not slots.get("password", ""):
-                # Delegate does not display messages, thus elict_slot is used here
-                return elicit_slot(
-                    event,
-                    "password",
-                    [
-                        f"Welcome back, {username}!",
-                        "Please enter your password.",
-                    ],
-                )
-    elif attributes.get("name", ""):
-        # Fill in name if possible
-        set_slot_value(slots, "name", attributes["name"])
 
+    # Fill in password if possible
+    if not slots.get("password", None) and attributes.get("password", None):
+        set_slot_value(slots, "password", attributes["password"])
     # Validate password
-    if slots.get("password", ""):
+    if slots.get("password", None):
         password = slots["password"]["value"]["originalValue"]
         if not is_valid_password(password):
             return elicit_slot(
@@ -190,16 +185,23 @@ def get_symptoms(event: dict[str, any]) -> dict[str, any]:
                 "password",
                 ["The password you entered is incorrect. Please try again."],
             )
-    elif attributes.get("password", ""):
-        # Fill in password if possible
-        set_slot_value(slots, "password", attributes["password"])
+    elif slots.get("name", None) and user:
+        # Delegate does not display messages, thus elict_slot is used here
+        return elicit_slot(
+            event,
+            "password",
+            [
+                f"Welcome back, {username}!",
+                "Please enter your password.",
+            ],
+        )
 
     return delegate(event)
 
 
 def login(event: dict[str, any]) -> dict[str, any]:
-    attributes = event["sessionState"]["sessionAttributes"]
-    slots = event["sessionState"]["intent"]["slots"]
+    attributes: dict[str, any] = event["sessionState"]["sessionAttributes"]
+    slots: dict[str, any] = event["sessionState"]["intent"]["slots"]
 
     if should_fulfill(event):
         attributes["name"] = slots["name"]["value"]["originalValue"]
@@ -207,33 +209,37 @@ def login(event: dict[str, any]) -> dict[str, any]:
         return delegate(event)
 
     # Check if user is already logged in
-    if attributes.get("name", "") and attributes.get("password", ""):
+    if attributes.get("name", None) and attributes.get("password", None):
         user = get_user(attributes["name"])
         if not user:
             del attributes["name"]
             del attributes["password"]
+            return fulfill(event, ["You have not signed up yet."])
 
-        hashed = hash_password(attributes.get("password", ""))
-        if user and user.get("password", "") == hashed:
+        hashed = hash_password(attributes["password"])
+        if user and user.get("password", None) == hashed:
             return fulfill(event, ["You have already logged in."])
         else:
             del attributes["password"]
 
+    # Fill in name if possible
+    if not slots.get("name", None) and attributes.get("name", None):
+        set_slot_value(slots, "name", attributes["name"])
     # Validate name
-    if slots.get("name", ""):
+    if slots.get("name", None):
         username = slots["name"]["value"]["originalValue"]
         if not is_valid_username(username):
             return elicit_slot(event, "name", ["Please enter a valid name."])
-        user = get_user(username)
 
+        user = get_user(username)
         if not user:
             return fulfill(event, ["You have not signed up yet."])
-    elif attributes.get("name", ""):
-        # Fill in name if possible
-        set_slot_value(slots, "name", attributes["name"])
 
+    # Fill in password if possible
+    if not slots.get("password", None) and attributes.get("password", None):
+        set_slot_value(slots, "password", attributes["password"])
     # Validate password
-    if slots.get("password", ""):
+    if slots.get("password", None):
         password = slots["password"]["value"]["originalValue"]
         if not is_valid_password(password):
             return elicit_slot(
@@ -249,16 +255,13 @@ def login(event: dict[str, any]) -> dict[str, any]:
                 "password",
                 ["The password you entered is incorrect. Please try again."],
             )
-    elif attributes.get("password", ""):
-        # Fill in password if possible
-        set_slot_value(slots, "password", attributes["password"])
 
     return delegate(event)
 
 
 def fulfill_post_symptoms(event: dict[str, any]) -> dict[str, any]:
-    slots = event["sessionState"]["intent"]["slots"]
-    attributes = event["sessionState"]["sessionAttributes"]
+    slots: dict[str, any] = event["sessionState"]["intent"]["slots"]
+    attributes: dict[str, any] = event["sessionState"]["sessionAttributes"]
 
     username = slots["name"]["value"]["originalValue"]
     password = slots["password"]["value"]["originalValue"]
@@ -294,40 +297,28 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
     if should_fulfill(event):
         return fulfill_post_symptoms(event)
 
-    slots = event["sessionState"]["intent"]["slots"]
-    attributes = event["sessionState"]["sessionAttributes"]
+    slots: dict[str, any] = event["sessionState"]["intent"]["slots"]
+    attributes: dict[str, any] = event["sessionState"]["sessionAttributes"]
     user = None
 
+    # Fill in name if possible
+    if not slots.get("name", None) and attributes.get("name", None):
+        set_slot_value(slots, "name", attributes["name"])
     # Validate name
-    if slots.get("name", ""):
+    if slots.get("name", None):
         username = slots["name"]["value"]["originalValue"]
         if not is_valid_username(username):
             return elicit_slot(event, "name", ["Please enter a valid name."])
         user = get_user(username)
+        if not user:
+            attributes.pop("name", None)
+            attributes.pop("password", None)
 
-        if not slots.get("password", ""):
-            # Delegate does not display messages, thus elict_slot is used here
-            return elicit_slot(
-                event,
-                "password",
-                (
-                    [
-                        f"Welcome back, {username}!",
-                        "Please enter your password.",
-                    ]
-                    if user
-                    else [
-                        f"Hello, {username}! It looks like your using our system for the first time, so we'll need some additional information.",
-                        "Please set your password below.",
-                    ]
-                ),
-            )
-    elif attributes.get("name", ""):
-        # Fill in name if possible
-        set_slot_value(slots, "name", attributes["name"])
-
+    # Fill in password if possible
+    if not slots.get("password", None) and attributes.get("password", None):
+        set_slot_value(slots, "password", attributes["password"])
     # Validate password
-    if slots.get("password", ""):
+    if slots.get("password", None):
         password = slots["password"]["value"]["originalValue"]
         if not is_valid_password(password):
             return elicit_slot(
@@ -343,16 +334,33 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
                 "password",
                 ["The password you entered is incorrect. Please try again."],
             )
-    elif attributes.get("password", ""):
-        # Fill in password if possible
-        set_slot_value(slots, "password", attributes["password"])
+    elif slots.get("name", None):
+        # Delegate does not display messages, thus elict_slot is used here
+        return elicit_slot(
+            event,
+            "password",
+            (
+                [
+                    f"Welcome back, {username}!",
+                    "Please enter your password.",
+                ]
+                if user
+                else [
+                    f"Hello, {username}! It looks like your using our system for the first time, so we'll need some additional information.",
+                    "Please set your password below.",
+                ]
+            ),
+        )
 
     # Fill in gender if possible
-    if not slots.get("gender", "") and user:
+    if not slots.get("gender", None) and user:
         set_slot_value(slots, "gender", user["gender"])
 
+    # Fill in age if possible
+    if not slots.get("age", None) and user:
+        set_slot_value(slots, "age", user["age"])
     # Validate age
-    if slots.get("age", ""):
+    if slots.get("age", None):
         age = slots["age"]["value"]["originalValue"]
         try:
             age = int(age)
@@ -364,20 +372,17 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
             return elicit_slot(event, "age", ["Please enter a positive age."])
         if age > 200:
             return elicit_slot(event, "age", ["Please enter a realistic age."])
-    elif user:
-        # Fill in age if possible
-        set_slot_value(slots, "age", user["age"])
 
     # Fill in history_exists if possible
     history_exists = None
-    if slots.get("history_exists", ""):
+    if slots.get("history_exists", None):
         history_exists = slots["history_exists"]["value"]["interpretedValue"]
     elif user:
         history_exists = "yes"
         set_slot_value(slots, "history_exists", history_exists)
 
     # Fill in history if possible
-    if not slots.get("history", ""):
+    if not slots.get("history", None):
         if user:
             set_slot_value(slots, "history", ",".join(user["history"]))
         elif history_exists == "no":
@@ -387,7 +392,7 @@ def post_symptoms(event: dict[str, any]) -> dict[str, any]:
     return delegate(event)
 
 
-def prepare_prompt(name: str, password: str, prompt: str) -> str:
+def prepare_prompt(name: str | None, password: str | None, prompt: str) -> str:
     prompt = (
         'You are a healthcare expert system called "Health Buddy", created to answer my questions about the new context or about myself. Here is my question: '
         + prompt.strip()
@@ -405,7 +410,7 @@ def prepare_prompt(name: str, password: str, prompt: str) -> str:
         return unauthorized_prompt
 
     hashed = hash_password(password)
-    if user.get("password", "") != hashed:
+    if user.get("password", None) != hashed:
         return unauthorized_prompt
 
     # Inject user info into prompt if they are authenticated
@@ -421,7 +426,7 @@ def prepare_prompt(name: str, password: str, prompt: str) -> str:
 
 
 def fallback(event: dict[str, any]) -> dict[str, any]:
-    attributes = event["sessionState"]["sessionAttributes"]
+    attributes: dict[str, any] = event["sessionState"]["sessionAttributes"]
     name = attributes.get("name", None)
     password = attributes.get("password", None)
     prompt = prepare_prompt(name, password, event["inputTranscript"])
