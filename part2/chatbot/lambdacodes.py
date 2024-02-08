@@ -27,7 +27,7 @@ def get_intent_name(event: dict[str, any]) -> str:
 
 
 def format_response(
-    event: dict[str, any], session_state: dict[str, any], messages: [str] = []
+    event: dict[str, any], session_state: dict[str, any], messages: list[str] = []
 ) -> dict[str, any]:
     return {
         "sessionState": session_state,
@@ -39,7 +39,7 @@ def format_response(
     }
 
 
-def fulfill(event: dict[str, any], messages: [str] = []) -> dict[str, any]:
+def fulfill(event: dict[str, any], messages: list[str] = []) -> dict[str, any]:
     session_state = event["sessionState"]
     session_state["dialogAction"] = {"type": "Close"}
     session_state["intent"]["state"] = "Fulfilled"
@@ -53,7 +53,7 @@ def delegate(event: dict[str, any]) -> dict[str, any]:
 
 
 def elicit_slot(
-    event: dict[str, any], slot_name: str, messages: [str] = []
+    event: dict[str, any], slot_name: str, messages: list[str] = []
 ) -> dict[str, any]:
     session_state = event["sessionState"]
     session_state["dialogAction"] = {"type": "ElicitSlot", "slotToElicit": slot_name}
@@ -95,7 +95,7 @@ def check_password(username: str, hashed_password: str) -> bool:
     return response.get("Item", {}).get("password", "") == hashed_password
 
 
-def parse_history(history: str) -> [str]:
+def parse_history(history: str) -> list[str]:
     return [h.strip() for h in history.split(",") if h.strip() != ""]
 
 
@@ -106,7 +106,7 @@ def pack_symptom(symptom: str) -> dict[str, any]:
     }
 
 
-def unpack_symptoms(symptoms: [dict[str, any]]) -> [str]:
+def unpack_symptoms(symptoms: [dict[str, any]]) -> list[str]:
     return "\n".join(
         [
             f"    {datetime.fromtimestamp(int(s['time'])).strftime('%Y-%m-%d %H:%M:%S')}: {s['symptom']}"
@@ -206,11 +206,12 @@ def login(event: dict[str, any]) -> dict[str, any]:
         attributes["password"] = slots["password"]["value"]["originalValue"]
         return delegate(event)
 
-    # Chec kfi user is already logged in
+    # Check if user is already logged in
     if attributes.get("name", "") and attributes.get("password", ""):
-        user = get_user(username)
+        user = get_user(attributes["name"])
         if not user:
             del attributes["name"]
+            del attributes["password"]
 
         hashed = hash_password(password)
         if user and user.get("password", "") == hashed:
